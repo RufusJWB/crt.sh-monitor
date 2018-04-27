@@ -1,12 +1,14 @@
+using Npgsql;
 using System;
+using System.Data;
 using Xunit;
 
 namespace Monitor.Tests
 {
-    public class UnitTest1
+    public class FunctionTests
     {
         [Fact]
-        public void Test1()
+        public void End2EndSmokeTest()
         {
             var test = new Monitor.Function();
 
@@ -14,11 +16,33 @@ namespace Monitor.Tests
         }
 
         [Fact]
-        public void Test2()
+        public void TestGetCA()
         {
+            var connString = "Host=crt.sh;Username=guest;Database=certwatch";
+
+
             var test = new Monitor.Function();
 
-            var result = test.GetNumberOfLINTError("1234");
+            long SiemensInternetServer2017CAID = 52410;
+            using (IDbConnection connection = new NpgsqlConnection(connString))
+            {
+                var result = test.GetCA(connection, SiemensInternetServer2017CAID);
+            }
+        }
+
+        [Fact]
+        public void TestGetCA_Certificate()
+        {
+            var connString = "Host=crt.sh;Username=guest;Database=certwatch";
+
+
+            var test = new Monitor.Function();
+
+            long SiemensInternetServer2017CAID = 52410;
+            using (IDbConnection connection = new NpgsqlConnection(connString))
+            {
+                var result = test.GetCA_Certificate(connection, SiemensInternetServer2017CAID);
+            }
         }
     }
 }
