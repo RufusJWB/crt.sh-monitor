@@ -10,9 +10,17 @@ namespace Monitor.DAL
         Byte[] serialNumber { get; set; }
         string subjectDistinguishedName { get; set; }
         DateTime notBefore { get; set; }
-        DateTime notAfter { get; set;}
+        DateTime notAfter { get; set; }
         DateTime firstSeen { get; set; }
         bool revoked { get; set; }
         int lintErrors { get; set; }
+
+        string crtSHLink
+        {
+            get
+            {
+                return $"https://crt.sh/?id={certificateID}&opt=cablint,x509lint,zlint";
+            }
+        }
     }
 }
