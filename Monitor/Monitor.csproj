@@ -6,10 +6,12 @@
     <NoWarn>$(NoWarn);NU1605</NoWarn>
   </PropertyGroup>
 
+  <!--
   <ItemGroup>
     <None Remove="stylecop.json" />
   </ItemGroup>
-
+-->
+  
   <ItemGroup>
     <AdditionalFiles Include="stylecop.json" />
   </ItemGroup>

@@ -1,26 +1,29 @@
-using Amazon.Lambda.APIGatewayEvents;
-using Amazon.Lambda.Core;
-using Dapper;
-using Newtonsoft.Json.Linq;
-using Npgsql;
+﻿// <copyright file="Monitor.cs" company="Siemens AG">
+// Copyright (c) Siemens AG. All rights reserved.
+// Licensed under the GPL-3.0 license. See LICENSE file in the project root for full license information.
+// </copyright>
+
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using Amazon.Lambda.APIGatewayEvents;
+using Amazon.Lambda.Core;
+using Dapper;
+using Newtonsoft.Json;
+using Npgsql;
 
 // Assembly attribute to enable the Lambda function's JSON input to be converted into a .NET class.
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.Json.JsonSerializer))]
 
 namespace Monitor
 {
-    public class Function
+    /// <summary>
+    /// Main class of this lambda function, exposing one method to get called from AWS lambda.
+    /// </summary>
+    public class Monitor
     {
-        static Function()
-        {
-            Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
-        }
-
-        private const string SelectCertificatesByCA = @"
+        private const string SelectCertificatesByCASQLStatement = @"
 select CERTIFICATE_ID,
        SERIAL_NUMBER,
        SUBJECT_DISTINGUISHED_NAME,
@@ -28,7 +31,8 @@ select CERTIFICATE_ID,
        NOT_AFTER,
        FIRST_SEEN,
        REVOKED,
-       LINT_ERRORS
+       LINT_ERRORS,
+       EXPIRED
 from
     ( select C.ID CERTIFICATE_ID,
              X509_SERIALNUMBER(C.CERTIFICATE) SERIAL_NUMBER,
@@ -37,7 +41,8 @@ from
              X509_NOTAFTER(C.CERTIFICATE) NOT_AFTER,
              CTLE.FIRST_SEEN FIRST_SEEN,
              COALESCE(CRL.REVOKED, 0) REVOKED,
-             COALESCE(LCI.LINT_ERRORS, 0) LINT_ERRORS
+             COALESCE(LCI.LINT_ERRORS, 0) LINT_ERRORS,
+             X509_NOTAFTER(C.CERTIFICATE) < now() EXPIRED
      from CERTIFICATE C
      join lateral
          (select MIN(CTLE.ENTRY_TIMESTAMP) FIRST_SEEN,
@@ -58,12 +63,24 @@ from
           from LINT_CERT_ISSUE LCI
           where LCI.CERTIFICATE_ID = C.ID
           group by LCI.CERTIFICATE_ID) LCI on true
-     where C.ISSUER_CA_ID = 52410) as ALL_CERTS
+     where C.ISSUER_CA_ID = @CA_ID) as ALL_CERTS
 /**where**/
 order by
    FIRST_SEEN desc
 ";
 
+        static Monitor() => Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
+
+        /// <summary>
+        /// Selecting all certificates from a certwatch.db that matches the given criterias.
+        /// </summary>
+        /// <param name="connection">The connections string of the database to connect with.</param>
+        /// <param name="caID">The id of the CA that shall be queried.</param>
+        /// <param name="excludeRevoked">Don't select revoked certificates.</param>
+        /// <param name="excludeExpired">Don't select expired certificates.</param>
+        /// <param name="onlyLINTErrors">Select only certificate with linting errors.</param>
+        /// <param name="daysToLookBack">Select only certificates new than this days.</param>
+        /// <returns>A list of certificates matching the selection criteria.</returns>
         public IEnumerable<DAL.Certificate> SelectCertificates(IDbConnection connection, long caID, bool excludeRevoked = false, bool excludeExpired = true, bool onlyLINTErrors = false, int daysToLookBack = 7)
         {
             if (connection == null)
@@ -72,7 +89,7 @@ order by
             }
 
             var builder = new SqlBuilder();
-            var selector = builder.AddTemplate(SelectCertificatesByCA);
+            var selector = builder.AddTemplate(SelectCertificatesByCASQLStatement);
 
             if (excludeRevoked)
             {
@@ -94,12 +111,18 @@ order by
             var ca_certificates = connection.Query<DAL.Certificate>(selector.RawSql, new
             {
                 CA_ID = caID,
-                DAYS_TO_LOOK_BACK = daysToLookBack
+                DAYS_TO_LOOK_BACK = daysToLookBack,
             });
 
             return ca_certificates;
         }
 
+        /// <summary>
+        /// Selecting all certificates that match certain criteria.
+        /// </summary>
+        /// <param name="apigProxyEvent">Event paramater coming from AWS API gateway.</param>
+        /// <param name="context">The context under which this method is being called.</param>
+        /// <returns>The list of selected certficates.</returns>
         public APIGatewayProxyResponse FunctionHandler(APIGatewayProxyRequest apigProxyEvent, ILambdaContext context)
         {
             context.Logger.LogLine("FunctionHandler started");
@@ -120,19 +143,19 @@ order by
 
             if (apigProxyEvent.QueryStringParameters == null)
             {
-                throw new ArgumentNullException(nameof(apigProxyEvent.QueryStringParameters));
+                throw new NullReferenceException(nameof(apigProxyEvent.QueryStringParameters));
             }
 
             context.Logger.LogLine("apigProxyEvent.QueryStringParameters not null");
 
             if (apigProxyEvent.QueryStringParameters.Keys == null)
             {
-                throw new ArgumentNullException(nameof(apigProxyEvent.QueryStringParameters.Keys));
+                throw new NullReferenceException(nameof(apigProxyEvent.QueryStringParameters.Keys));
             }
 
             context.Logger.LogLine("apigProxyEvent.QueryStringParameters.Keys not null");
 
-            if (!apigProxyEvent.QueryStringParameters.Keys.Contains("caid"))
+            if (!apigProxyEvent.QueryStringParameters.Keys.Contains("caID"))
             {
                 return new APIGatewayProxyResponse
                 {
@@ -141,7 +164,7 @@ order by
                 };
             }
 
-            context.Logger.LogLine($"Hallo CA: {apigProxyEvent.QueryStringParameters["caid"]}");
+            context.Logger.LogLine($"Hallo CA: {apigProxyEvent.QueryStringParameters["caID"]}");
 
             long caID = 0;
             string caIDString = string.Empty;
@@ -206,6 +229,30 @@ order by
             else
             {
                 context.Logger.LogLine("excludeExpired not set");
+            }
+
+            bool excludeRevoked = true;
+            string excludeRevokedString = string.Empty;
+            if (apigProxyEvent.QueryStringParameters.TryGetValue("excludeRevoked", out excludeRevokedString))
+            {
+                if (!bool.TryParse(excludeRevokedString, out excludeRevoked))
+                {
+                    context.Logger.LogLine("excludeRevoked set but can't extracted - exiting");
+
+                    return new APIGatewayProxyResponse
+                    {
+                        Body = "excludeRevoked set but can't extracted",
+                        StatusCode = 404,
+                    };
+                }
+                else
+                {
+                    context.Logger.LogLine($"excludeRevoked set to {excludeRevoked}");
+                }
+            }
+            else
+            {
+                context.Logger.LogLine("excludeRevoked not set");
             }
 
             bool onlyLINTErrors = true;
@@ -284,33 +331,34 @@ order by
 
             using (IDbConnection connection = new NpgsqlConnection(connString))
             {
-                var res1 = SelectCertificates(connection, caID: caID, daysToLookBack: daysToLookBack, excludeExpired: excludeExpired, onlyLINTErrors: onlyLINTErrors);
+                var res1 = this.SelectCertificates(connection, caID: caID, daysToLookBack: daysToLookBack, excludeExpired: excludeExpired, onlyLINTErrors: onlyLINTErrors, excludeRevoked: excludeRevoked);
 
                 if (verbose)
                 {
-                    dynamic result = new JObject();
-                    result.CAID = caID;
-                    result.Parameter = new JObject();
-                    result.Paramater.excludeExpired = excludeExpired;
-                    result.Paramater.onlyLINTErrors = onlyLINTErrors;
-                    result.Paramater.daysToLookBack = daysToLookBack;
-                    result.Results = new JArray(res1.ToArray());
+                    var returnValue = new ReturnValues
+                    {
+                        CAID = caID,
+                        ExcludeExpired = excludeExpired,
+                        OnlyLINTErrors = onlyLINTErrors,
+                        DaysToLookBack = daysToLookBack,
+                        ExcludeRevoked = excludeRevoked,
+                        Results = res1,
+                    };
 
                     return new APIGatewayProxyResponse
                     {
-                        Body = result.toString(),
+                        Body = JsonConvert.SerializeObject(returnValue, Formatting.Indented),
                         StatusCode = 200,
                     };
                 }
                 else
                 {
-                return new APIGatewayProxyResponse
-                {
-                    Body = $"Found CAID {caID} with {res1.Count()} certificates matching the conditions: excludeExpired: {excludeExpired}, onlyLINTErrors: {onlyLINTErrors}, daysToLookBack: {daysToLookBack}",
-                    StatusCode = 200,
-                };
+                    return new APIGatewayProxyResponse
+                    {
+                        Body = $"Found CAID {caID} with {res1.Count()} certificates matching the conditions: excludeExpired: {excludeExpired}, excludeRevoked: {excludeRevoked}, onlyLINTErrors: {onlyLINTErrors}, daysToLookBack: {daysToLookBack}",
+                        StatusCode = 200,
+                    };
                 }
-
             }
         }
     }
