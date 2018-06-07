@@ -1,2 +1,2 @@
 # crt.sh-monitor
-A monitor for crt.sh based on AWS
+A monitor for crt.sh based on AWS Lambda
