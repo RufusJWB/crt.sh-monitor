@@ -143,32 +143,20 @@ order by
 
             if (apigProxyEvent.QueryStringParameters == null)
             {
-                throw new NullReferenceException(nameof(apigProxyEvent.QueryStringParameters));
+                return new APIGatewayProxyResponse
+                {
+                    Body = "No query parameters set - see documentation how to use this web services at https://github.com/RufusJWB/crt.sh-monitor",
+                    StatusCode = 404,
+                };
             }
 
             context.Logger.LogLine("apigProxyEvent.QueryStringParameters not null");
 
-            if (apigProxyEvent.QueryStringParameters.Keys == null)
-            {
-                throw new NullReferenceException(nameof(apigProxyEvent.QueryStringParameters.Keys));
-            }
-
-            context.Logger.LogLine("apigProxyEvent.QueryStringParameters.Keys not null");
-
-            if (!apigProxyEvent.QueryStringParameters.Keys.Contains("caID"))
-            {
-                return new APIGatewayProxyResponse
-                {
-                    Body = "No CAID found",
-                    StatusCode = 406,
-                };
-            }
-
-            context.Logger.LogLine($"Hallo CA: {apigProxyEvent.QueryStringParameters["caID"]}");
+            IDictionary<string, string> caseInsensitiveHeader = new Dictionary<string, string>(apigProxyEvent.QueryStringParameters, StringComparer.OrdinalIgnoreCase);
 
             long caID = 0;
             string caIDString = string.Empty;
-            if (apigProxyEvent.QueryStringParameters.TryGetValue("caID", out caIDString))
+            if (caseInsensitiveHeader.TryGetValue("caID", out caIDString))
             {
                 if (!long.TryParse(caIDString, out caID))
                 {
@@ -209,7 +197,7 @@ order by
 
             bool excludeExpired = true;
             string excludeExpiredString = string.Empty;
-            if (apigProxyEvent.QueryStringParameters.TryGetValue("excludeExpired", out excludeExpiredString))
+            if (caseInsensitiveHeader.TryGetValue("excludeExpired", out excludeExpiredString))
             {
                 if (!bool.TryParse(excludeExpiredString, out excludeExpired))
                 {
@@ -233,7 +221,7 @@ order by
 
             bool excludeRevoked = true;
             string excludeRevokedString = string.Empty;
-            if (apigProxyEvent.QueryStringParameters.TryGetValue("excludeRevoked", out excludeRevokedString))
+            if (caseInsensitiveHeader.TryGetValue("excludeRevoked", out excludeRevokedString))
             {
                 if (!bool.TryParse(excludeRevokedString, out excludeRevoked))
                 {
@@ -257,7 +245,7 @@ order by
 
             bool onlyLINTErrors = true;
             string onlyLINTErrorsString = string.Empty;
-            if (apigProxyEvent.QueryStringParameters.TryGetValue("onlyLINTErrors", out onlyLINTErrorsString))
+            if (caseInsensitiveHeader.TryGetValue("onlyLINTErrors", out onlyLINTErrorsString))
             {
                 if (!bool.TryParse(onlyLINTErrorsString, out onlyLINTErrors))
                 {
@@ -281,7 +269,7 @@ order by
 
             int daysToLookBack = 3650;
             string daysToLookBackString = string.Empty;
-            if (apigProxyEvent.QueryStringParameters.TryGetValue("daysToLookBack", out daysToLookBackString))
+            if (caseInsensitiveHeader.TryGetValue("daysToLookBack", out daysToLookBackString))
             {
                 if (!int.TryParse(daysToLookBackString, out daysToLookBack))
                 {
@@ -305,7 +293,7 @@ order by
 
             bool verbose = true;
             string verboseString = string.Empty;
-            if (apigProxyEvent.QueryStringParameters.TryGetValue("verbose", out verboseString))
+            if (caseInsensitiveHeader.TryGetValue("verbose", out verboseString))
             {
                 if (!bool.TryParse(verboseString, out verbose))
                 {
