@@ -27,6 +27,7 @@ namespace Monitor
 select CERTIFICATE_ID,
        SERIAL_NUMBER,
        SUBJECT_DISTINGUISHED_NAME,
+       CERTIFICATE_TYPE,
        NOT_BEFORE,
        NOT_AFTER,
        FIRST_SEEN,
@@ -37,6 +38,11 @@ from
     ( select C.ID CERTIFICATE_ID,
              X509_SERIALNUMBER(C.CERTIFICATE) SERIAL_NUMBER,
              X509_SUBJECTNAME(C.CERTIFICATE) SUBJECT_DISTINGUISHED_NAME,
+             (CASE WHEN (x509_print(C.CERTIFICATE) LIKE '%CT Precertificate Poison%') THEN
+                 'Precertificate'
+             ELSE
+                 'Certificate'
+             END) CERTIFICATE_TYPE,
              X509_NOTBEFORE(C.CERTIFICATE) NOT_BEFORE,
              X509_NOTAFTER(C.CERTIFICATE) NOT_AFTER,
              CTLE.FIRST_SEEN FIRST_SEEN,
@@ -79,9 +85,10 @@ order by
         /// <param name="excludeRevoked">Don't select revoked certificates.</param>
         /// <param name="excludeExpired">Don't select expired certificates.</param>
         /// <param name="onlyLINTErrors">Select only certificate with linting errors.</param>
+        /// <param name="excludePreCertificate">Don't select pre certificates.</param>
         /// <param name="daysToLookBack">Select only certificates new than this days.</param>
         /// <returns>A list of certificates matching the selection criteria.</returns>
-        public IEnumerable<DAL.Certificate> SelectCertificates(IDbConnection connection, long caID, bool excludeRevoked = false, bool excludeExpired = true, bool onlyLINTErrors = false, int daysToLookBack = 7)
+        public IEnumerable<DAL.Certificate> SelectCertificates(IDbConnection connection, long caID, bool excludeRevoked = false, bool excludeExpired = true, bool onlyLINTErrors = false, bool excludePreCertificate = false, int daysToLookBack = 7)
         {
             if (connection == null)
             {
@@ -104,6 +111,11 @@ order by
             if (excludeExpired)
             {
                 builder.Where("NOT_AFTER > now()");
+            }
+
+            if (excludePreCertificate)
+            {
+                builder.Where("CERTIFICATE_TYPE <> 'Precertificate'");
             }
 
             builder.Where("FIRST_SEEN > now() - interval '{=DAYS_TO_LOOK_BACK} days'");
@@ -315,11 +327,35 @@ order by
                 context.Logger.LogLine("verbose not set");
             }
 
+            bool excludePreCerticiates = true;
+            string excludePreCerticiatesString = string.Empty;
+            if (caseInsensitiveHeader.TryGetValue("excludePreCertificates", out excludePreCerticiatesString))
+            {
+                if (!bool.TryParse(excludePreCerticiatesString, out excludePreCerticiates))
+                {
+                    context.Logger.LogLine("excludePreCertificates set but can't extracted - exiting");
+
+                    return new APIGatewayProxyResponse
+                    {
+                        Body = "excludePreCertificates set but can't extracted",
+                        StatusCode = 404,
+                    };
+                }
+                else
+                {
+                    context.Logger.LogLine($"excludePreCerticiates set to {excludePreCerticiates}");
+                }
+            }
+            else
+            {
+                context.Logger.LogLine("excludePreCerticiates not set");
+            }
+
             var connString = "Host=crt.sh;Username=guest;Database=certwatch";
 
             using (IDbConnection connection = new NpgsqlConnection(connString))
             {
-                var res1 = this.SelectCertificates(connection, caID: caID, daysToLookBack: daysToLookBack, excludeExpired: excludeExpired, onlyLINTErrors: onlyLINTErrors, excludeRevoked: excludeRevoked);
+                var res1 = this.SelectCertificates(connection, caID: caID, daysToLookBack: daysToLookBack, excludeExpired: excludeExpired, onlyLINTErrors: onlyLINTErrors, excludeRevoked: excludeRevoked, excludePreCertificate: excludePreCerticiates);
 
                 if (verbose)
                 {
@@ -330,6 +366,7 @@ order by
                         OnlyLINTErrors = onlyLINTErrors,
                         DaysToLookBack = daysToLookBack,
                         ExcludeRevoked = excludeRevoked,
+                        ExcludePreCertificates = excludePreCerticiates,
                         Results = res1,
                     };
 

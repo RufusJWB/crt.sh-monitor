@@ -6,6 +6,8 @@
 namespace Monitor.DAL
 {
     using System;
+    using System.Globalization;
+    using System.Text;
 
     /// <summary>
     /// Represents a single certificate.
@@ -28,6 +30,11 @@ namespace Monitor.DAL
         /// Gets or sets the SDN of this certificate.
         /// </summary>
         public string SubjectDistinguishedName { get; set; }
+
+        /// <summary>
+        /// Gets or sets the type of this certificate.
+        /// </summary>
+        public string CertificateType { get; set; }
 
         /// <summary>
         /// Gets or sets the not before date of this certificate.
@@ -67,6 +74,17 @@ namespace Monitor.DAL
             get
             {
                 return $"https://crt.sh/?id={this.CertificateID}&opt=cablint,x509lint,zlint";
+            }
+        }
+
+        /// <summary>
+        /// Gets the hexadecimal represention of the serial number.
+        /// </summary>
+        public string HexSerialNumber
+        {
+            get
+            {
+                return BitConverter.ToString(this.SerialNumber);
             }
         }
     }

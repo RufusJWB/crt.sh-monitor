@@ -38,6 +38,11 @@ namespace Monitor
         public bool ExcludeRevoked { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether pre certifcates shall be excluded.
+        /// </summary>
+        public bool ExcludePreCertificates { get; set; }
+
+        /// <summary>
         /// Gets or sets the list of all selected certificates.
         /// </summary>
         public IEnumerable<DAL.Certificate> Results { get; set; }
