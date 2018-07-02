@@ -327,7 +327,7 @@ order by
                 context.Logger.LogLine("verbose not set");
             }
 
-            bool excludePreCerticiates = true;
+            bool excludePreCerticiates = false;
             string excludePreCerticiatesString = string.Empty;
             if (caseInsensitiveHeader.TryGetValue("excludePreCertificates", out excludePreCerticiatesString))
             {
