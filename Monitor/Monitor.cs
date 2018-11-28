@@ -81,6 +81,7 @@ order by
         /// Selecting all certificates from a certwatch.db that matches the given criterias.
         /// </summary>
         /// <param name="connection">The connections string of the database to connect with.</param>
+        /// <param name="context">The context of the hosting lambda function.</param>
         /// <param name="caID">The id of the CA that shall be queried.</param>
         /// <param name="excludeRevoked">Don't select revoked certificates.</param>
         /// <param name="excludeExpired">Don't select expired certificates.</param>
@@ -88,7 +89,7 @@ order by
         /// <param name="excludePreCertificate">Don't select pre certificates.</param>
         /// <param name="daysToLookBack">Select only certificates new than this days.</param>
         /// <returns>A list of certificates matching the selection criteria.</returns>
-        public IEnumerable<DAL.Certificate> SelectCertificates(IDbConnection connection, long caID, bool excludeRevoked = false, bool excludeExpired = true, bool onlyLINTErrors = false, bool excludePreCertificate = false, int daysToLookBack = 7)
+        public IEnumerable<DAL.Certificate> SelectCertificates(IDbConnection connection, ILambdaContext context, long caID, bool excludeRevoked = false, bool excludeExpired = true, bool onlyLINTErrors = false, bool excludePreCertificate = false, int daysToLookBack = 7)
         {
             if (connection == null)
             {
@@ -120,12 +121,26 @@ order by
 
             builder.Where("FIRST_SEEN > now() - interval '{=DAYS_TO_LOOK_BACK} days'");
 
-            var ca_certificates = connection.Query<DAL.Certificate>(selector.RawSql, new
-            {
-                CA_ID = caID,
-                DAYS_TO_LOOK_BACK = daysToLookBack,
-            });
+            IEnumerable<DAL.Certificate> ca_certificates = null;
+            int errorCounter = 0;
 
+            do
+            {
+                try
+                {
+                    ca_certificates = connection.Query<DAL.Certificate>(selector.RawSql, new
+                    {
+                        CA_ID = caID,
+                        DAYS_TO_LOOK_BACK = daysToLookBack,
+                    });
+                }
+                catch (NpgsqlException npgsqlException)
+                {
+                    errorCounter++;
+                    context.Logger.LogLine($"Exception {errorCounter} querying crt.sh DB: {npgsqlException.ToString()}");
+                }
+            }
+            while ((ca_certificates == null) || (errorCounter < 5));
             return ca_certificates;
         }
 
@@ -355,7 +370,7 @@ order by
 
             using (IDbConnection connection = new NpgsqlConnection(connString))
             {
-                var res1 = this.SelectCertificates(connection, caID: caID, daysToLookBack: daysToLookBack, excludeExpired: excludeExpired, onlyLINTErrors: onlyLINTErrors, excludeRevoked: excludeRevoked, excludePreCertificate: excludePreCerticiates);
+                var res1 = this.SelectCertificates(connection, context, caID: caID, daysToLookBack: daysToLookBack, excludeExpired: excludeExpired, onlyLINTErrors: onlyLINTErrors, excludeRevoked: excludeRevoked, excludePreCertificate: excludePreCerticiates);
 
                 if (verbose)
                 {
