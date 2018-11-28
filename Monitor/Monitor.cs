@@ -351,7 +351,7 @@ order by
                 context.Logger.LogLine("excludePreCerticiates not set");
             }
 
-            var connString = "Host=crt.sh;Username=guest;Database=certwatch";
+            var connString = "Host=crt.sh;Username=guest;Database=certwatch;Application Name=crt.sh Monitor;Command Timeout=60";
 
             using (IDbConnection connection = new NpgsqlConnection(connString))
             {
