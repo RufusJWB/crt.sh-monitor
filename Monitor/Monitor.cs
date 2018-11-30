@@ -96,6 +96,11 @@ order by
                 throw new ArgumentNullException(nameof(connection));
             }
 
+            if (context != null)
+            {
+                context.Logger.LogLine("SelectCertificates started");
+            }
+
             var builder = new SqlBuilder();
             var selector = builder.AddTemplate(SelectCertificatesByCASQLStatement);
 
@@ -143,7 +148,11 @@ order by
                     }
                 }
             }
-            while ((ca_certificates == null) || (errorCounter < 5));
+            while (ca_certificates == null);
+            if (context != null)
+            {
+                context.Logger.LogLine($"SelectCertificates done");
+            }
             return ca_certificates;
         }
 
@@ -369,7 +378,7 @@ order by
                 context.Logger.LogLine("excludePreCerticiates not set");
             }
 
-            var connString = "Host=crt.sh;Username=guest;Database=certwatch;Application Name=crt.sh Monitor;Command Timeout=60";
+            var connString = "Host=crt.sh;Username=guest;Database=certwatch;Application Name=crt.sh Monitor;Timeout=240;Command Timeout=10";
 
             using (IDbConnection connection = new NpgsqlConnection(connString))
             {
